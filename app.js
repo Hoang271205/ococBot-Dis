@@ -13,6 +13,27 @@ mongoose.connect(process.env.MONGODB_URI)
     process.exit(1);
   });
 
+// Tạo HTTP server đơn giản cho Render (để bot không bị down)
+import express from 'express';
+const httpApp = express();
+const PORT = process.env.PORT || 3000;
+
+httpApp.get('/', (req, res) => {
+  res.send('🤖 Discord Marriage Bot is running!');
+});
+
+httpApp.get('/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    bot: client.user ? client.user.tag : 'Not ready',
+    uptime: process.uptime()
+  });
+});
+
+httpApp.listen(PORT, () => {
+  console.log(`🌐 HTTP server listening on port ${PORT}`);
+});
+
 // Khởi tạo Discord Client
 const client = new Client({
   intents: [
@@ -57,12 +78,12 @@ client.on('messageCreate', async (message) => {
     }
 
     // === 1. TEST COMMAND ===
-    if (command === 'otest') {
+    if (command === 'test') {
       return message.reply('✅ Bot đang hoạt động bình thường!');
     }
 
     // === 2. PROFILE COMMAND ===
-    if (command === 'oprofile') {
+    if (command === 'profile') {
       let status = "Độc thân";
       if (user.partnerId && user.marriedAt) {
         const startDate = new Date(user.marriedAt);
@@ -73,7 +94,7 @@ client.on('messageCreate', async (message) => {
     }
 
     // === 3. DAILY COMMAND ===
-    if (command === 'odaily') {
+    if (command === 'daily') {
       const now = new Date();
       const COOLDOWN = 24 * 60 * 60 * 1000;
       
@@ -90,7 +111,7 @@ client.on('messageCreate', async (message) => {
     }
 
     // === 4. SHOP COMMAND ===
-    if (command === 'oshop') {
+    if (command === 'shop') {
       const selectMenu = new StringSelectMenuBuilder()
         .setCustomId('shop_select')
         .setPlaceholder('Chọn nhẫn...')
@@ -225,6 +246,8 @@ client.on('messageCreate', async (message) => {
 
       return message.reply(`✅ Đã nạp **${amount.toLocaleString()}$** cho <@${targetId}>.\n💰 Số dư mới: **${updatedUser.money.toLocaleString()}$**`);
     }
+
+    // === 8.5. OADDPIC COMMAND - THÊM ẢNH CẶP ĐÔI ===
     if (command === 'oaddpic') {
       if (!user.partnerId) {
         return message.reply('❌ Bạn cần phải kết hôn trước khi thêm ảnh cặp đôi!');
@@ -295,10 +318,10 @@ client.on('messageCreate', async (message) => {
     }
 
     // === 9. MARRY COMMAND ===
-    if (command === 'omarry') {
+    if (command === 'marry') {
       const mentionedUser = message.mentions.users.first();
       if (!mentionedUser) {
-        return message.reply('❌ Cách dùng: `omarry @user`\nVí dụ: `omarry @someone`');
+        return message.reply('❌ Cách dùng: `marry @user`\nVí dụ: `marry @someone`');
       }
 
       const targetId = mentionedUser.id;
@@ -368,13 +391,14 @@ client.on('messageCreate', async (message) => {
     if (command === 'help' || command === 'h') {
       return message.reply(
         `📋 **DANH SÁCH LỆNH**\n\n` +
-        `\`otest\` - Kiểm tra bot\n` +
-        `\`oprofile\` - Xem thông tin cá nhân\n` +
-        `\`odaily\` - Điểm danh nhận 50,000$\n` +
-        `\`oshop\` - Mở cửa hàng nhẫn\n` +
-        `\`omarry @user\` - Cầu hôn người dùng\n` +
+        `\`test\` - Kiểm tra bot\n` +
+        `\`profile\` - Xem thông tin cá nhân\n` +
+        `\`daily\` - Điểm danh nhận 50,000$\n` +
+        `\`shop\` - Mở cửa hàng nhẫn\n` +
+        `\`marry @user\` - Cầu hôn người dùng\n` +
         `\`olove\` - Tăng điểm tình yêu (1h/lần)\n` +
         `\`ocheck\` - Kiểm tra thông tin cặp đôi\n` +
+        `\`oaddpic\` - Thêm ảnh cặp đôi (đính kèm ảnh hoặc URL)\n` +
         `\`odivorce\` - Ly hôn\n` +
         `\`oaddcash <số> [@user]\` - Nạp tiền (Admin)\n\n` +
         `*Không cần dấu / trước lệnh!*`
@@ -507,7 +531,7 @@ client.on('interactionCreate', async (interaction) => {
 
       await User.updateMany(
         { discordId: { $in: [proposerId, partnerId] } },
-        { $set: { partnerId: null, marriedAt: null, lovePoints: 0 } }
+        { $set: { partnerId: null, marriedAt: null, lovePoints: 0, couplePhoto: null } }
       );
 
       return interaction.reply({
