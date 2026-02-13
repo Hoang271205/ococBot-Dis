@@ -558,4 +558,9 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 // Đăng nhập bot
-client.login(process.env.BOT_TOKEN);
+console.log("⏳ Đang tiến hành đăng nhập vào Discord...");
+
+client.login(process.env.BOT_TOKEN).catch(err => {
+  console.error("❌ Lỗi login Bot:");
+  console.error(err); // In chi tiết lỗi ra log
+});
