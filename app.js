@@ -5,6 +5,16 @@ import mongoose from 'mongoose';
 import { User } from './models/User.js';
 import { RINGS_SHOP } from './constants.js';
 
+
+// Đăng nhập bot
+console.log("⏳ Đang tiến hành đăng nhập vào Discord...");
+
+client.login(process.env.BOT_TOKEN).catch(err => {
+  console.error("❌ Lỗi login Bot:");
+  console.error(err); // In chi tiết lỗi ra log
+});
+
+
 // Kết nối MongoDB
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('✅ Đã kết nối MongoDB thành công'))
@@ -557,10 +567,3 @@ client.on('interactionCreate', async (interaction) => {
   }
 });
 
-// Đăng nhập bot
-console.log("⏳ Đang tiến hành đăng nhập vào Discord...");
-
-client.login(process.env.BOT_TOKEN).catch(err => {
-  console.error("❌ Lỗi login Bot:");
-  console.error(err); // In chi tiết lỗi ra log
-});
