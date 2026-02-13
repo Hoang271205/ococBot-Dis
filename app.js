@@ -89,7 +89,14 @@ client.on('messageCreate', async (message) => {
 
     // === 1. TEST COMMAND ===
     if (command === 'test') {
-      return message.reply('✅ Bot đang hoạt động bình thường!');
+      console.log("-> Đang thử phản hồi lệnh test...");
+      
+      return message.reply('✅ Bot đang hoạt động bình thường!')
+        .then(() => console.log("-> Đã gửi phản hồi thành công!"))
+        .catch(err => {
+          console.error("❌ Lỗi khi gửi tin nhắn phản hồi:");
+          console.error(err); // Đây là dòng sẽ "khai" ra bot thiếu quyền gì
+        });
     }
 
     // === 2. PROFILE COMMAND ===
