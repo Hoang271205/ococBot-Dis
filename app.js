@@ -7,12 +7,7 @@ import { RINGS_SHOP } from './constants.js';
 
 
 // Đăng nhập bot
-console.log("⏳ Đang tiến hành đăng nhập vào Discord...");
 
-client.login(process.env.BOT_TOKEN).catch(err => {
-  console.error("❌ Lỗi login Bot:");
-  console.error(err); // In chi tiết lỗi ra log
-});
 
 
 // Kết nối MongoDB
@@ -51,6 +46,12 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent, // QUAN TRỌNG: Phải bật trong Discord Portal
   ]
+});
+console.log("⏳ Đang tiến hành đăng nhập vào Discord...");
+
+client.login(process.env.BOT_TOKEN).catch(err => {
+  console.error("❌ Lỗi login Bot:");
+  console.error(err); // In chi tiết lỗi ra log
 });
 
 // Prefix (có thể để trống nếu muốn không cần prefix)
