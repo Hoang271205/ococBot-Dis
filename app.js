@@ -1,4 +1,4 @@
-// app.js - Message-based bot (không dùng slash commands)
+// app.js - Enhanced debug version
 import 'dotenv/config';
 import { Client, GatewayIntentBits, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import mongoose from 'mongoose';
@@ -7,17 +7,17 @@ import { User } from './models/User.js';
 import { RINGS_SHOP } from './constants.js';
 
 // ============================================
-// 1. KHỞI TẠO DISCORD CLIENT TRƯỚC TIÊN
+// 1. KHỞI TẠO DISCORD CLIENT
 // ============================================
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent, // QUAN TRỌNG: Phải bật trong Discord Portal
+    GatewayIntentBits.MessageContent,
   ]
 });
 
-const PREFIX = ''; // Để trống = không cần prefix
+const PREFIX = '';
 
 // ============================================
 // 2. KẾT NỐI MONGODB
@@ -30,7 +30,7 @@ mongoose.connect(process.env.MONGODB_URI)
   });
 
 // ============================================
-// 3. TẠO HTTP SERVER CHO RENDER
+// 3. HTTP SERVER
 // ============================================
 const httpApp = express();
 const PORT = process.env.PORT || 3000;
@@ -45,7 +45,8 @@ httpApp.get('/health', (req, res) => {
     bot: client.user ? client.user.tag : 'Not ready',
     botReady: client.isReady(),
     uptime: process.uptime(),
-    readyAt: client.readyAt ? client.readyAt.toISOString() : null
+    readyAt: client.readyAt ? client.readyAt.toISOString() : null,
+    guilds: client.guilds.cache.size
   });
 });
 
@@ -54,7 +55,33 @@ httpApp.listen(PORT, () => {
 });
 
 // ============================================
-// 4. ĐĂNG NHẬP DISCORD BOT
+// 4. DISCORD ERROR HANDLERS (THÊM ĐỂ DEBUG)
+// ============================================
+client.on('error', (error) => {
+  console.error('❌ Discord Client Error:', error);
+});
+
+client.on('warn', (warning) => {
+  console.warn('⚠️ Discord Warning:', warning);
+});
+
+client.on('debug', (info) => {
+  // Chỉ log những debug message quan trọng
+  if (info.includes('Preparing to connect') || 
+      info.includes('Identifying') || 
+      info.includes('Ready') ||
+      info.includes('Session') ||
+      info.includes('Authenticated')) {
+    console.log('🔍 Discord Debug:', info);
+  }
+});
+
+client.on('shardError', error => {
+  console.error('❌ Shard error:', error);
+});
+
+// ============================================
+// 5. ĐĂNG NHẬP DISCORD BOT
 // ============================================
 console.log("⏳ Đang tiến hành đăng nhập vào Discord...");
 console.log(`📌 BOT_TOKEN exists: ${process.env.BOT_TOKEN ? 'Yes' : 'No'}`);
@@ -65,37 +92,60 @@ if (!process.env.BOT_TOKEN) {
   process.exit(1);
 }
 
+// Validate token format
+if (process.env.BOT_TOKEN.length < 50) {
+  console.error('❌ BOT_TOKEN seems too short, might be invalid!');
+}
+
+console.log('🔐 Attempting to login...');
+
 client.login(process.env.BOT_TOKEN)
   .then(() => {
-    console.log("✅ Login request sent successfully, waiting for ready event...");
+    console.log("✅ Login promise resolved! Waiting for ready event...");
   })
   .catch(err => {
-    console.error("❌ Lỗi login Bot:");
-    console.error(err);
+    console.error("❌❌❌ CRITICAL ERROR - Login failed:");
+    console.error("Error name:", err.name);
+    console.error("Error message:", err.message);
+    console.error("Error code:", err.code);
+    console.error("Full error:", err);
     process.exit(1);
   });
 
+// Timeout nếu bot không ready sau 30 giây
+setTimeout(() => {
+  if (!client.isReady()) {
+    console.error('❌ TIMEOUT: Bot không ready sau 30 giây!');
+    console.error('Possible issues:');
+    console.error('1. Invalid BOT_TOKEN');
+    console.error('2. Discord API down');
+    console.error('3. Intents not enabled');
+    console.error('4. Network/firewall issues');
+    process.exit(1);
+  }
+}, 30000);
+
 // ============================================
-// 5. DISCORD EVENT: READY
+// 6. DISCORD READY EVENT
 // ============================================
 client.once('ready', () => {
+  console.log('🎉🎉🎉 READY EVENT RECEIVED!');
   console.log(`🤖 Bot đã đăng nhập: ${client.user.tag}`);
-  console.log(`📝 Prefix: "${PREFIX}" (để trống = không cần prefix)`);
+  console.log(`📝 Prefix: "${PREFIX}"`);
+  console.log(`🏰 Guilds: ${client.guilds.cache.size}`);
   console.log(`✅ Bot đã sẵn sàng!`);
 });
 
 // ============================================
-// 6. XỬ LÝ TIN NHẮN
+// 7. XỬ LÝ TIN NHẮN
 // ============================================
 client.on('messageCreate', async (message) => {
   try {
-    // Bỏ qua tin nhắn từ bot
     if (message.author.bot) return;
 
     const userId = message.author.id;
     let content = message.content.trim();
 
-    // Xử lý prefix (nếu có)
     if (PREFIX && !content.startsWith(PREFIX)) return;
     if (PREFIX) content = content.slice(PREFIX.length).trim();
 
@@ -104,7 +154,6 @@ client.on('messageCreate', async (message) => {
 
     console.log(`[MESSAGE] ${message.author.tag}: ${command}`);
 
-    // Lấy hoặc tạo user
     let user = await User.findOne({ discordId: userId });
     if (!user) {
       user = new User({ discordId: userId });
@@ -409,7 +458,7 @@ client.on('messageCreate', async (message) => {
 });
 
 // ============================================
-// 7. XỬ LÝ BUTTON VÀ SELECT MENU
+// 8. XỬ LÝ INTERACTIONS
 // ============================================
 client.on('interactionCreate', async (interaction) => {
   try {
@@ -418,7 +467,6 @@ client.on('interactionCreate', async (interaction) => {
     const userId = interaction.user.id;
     console.log(`[INTERACTION] ${interaction.customId} by ${userId}`);
 
-    // === MUA NHẪN ===
     if (interaction.customId === 'shop_select') {
       const ring = RINGS_SHOP.find(r => r.id === interaction.values[0]);
       let user = await User.findOne({ discordId: userId });
@@ -444,7 +492,6 @@ client.on('interactionCreate', async (interaction) => {
       });
     }
 
-    // === CHỌN NHẪN CẦU HÔN ===
     if (interaction.customId === 'marry_select_ring') {
       const [ringName, targetId] = interaction.values[0].split('|');
 
@@ -466,7 +513,6 @@ client.on('interactionCreate', async (interaction) => {
       });
     }
 
-    // === ĐỒNG Ý KẾT HÔN ===
     if (interaction.customId.startsWith('accept_')) {
       const parts = interaction.customId.split('_');
       const proposerId = parts[1];
@@ -515,7 +561,6 @@ client.on('interactionCreate', async (interaction) => {
       });
     }
 
-    // === XÁC NHẬN LY HÔN ===
     if (interaction.customId.startsWith('confirm_divorce_')) {
       const parts = interaction.customId.split('_');
       const proposerId = parts[2];
@@ -538,12 +583,10 @@ client.on('interactionCreate', async (interaction) => {
       });
     }
 
-    // === HỦY LY HÔN ===
     if (interaction.customId === 'cancel_divorce') {
       return interaction.reply('💖 Thật may mắn, hai bạn đã quyết định ngồi lại bên nhau!');
     }
 
-    // === TỪ CHỐI CẦU HÔN ===
     if (interaction.customId === 'reject') {
       return interaction.reply('💔 Rất tiếc, lời cầu hôn đã bị từ chối.');
     }
