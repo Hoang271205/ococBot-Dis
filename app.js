@@ -1,16 +1,27 @@
 // app.js - Message-based bot (không dùng slash commands)
 import 'dotenv/config';
-import { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import { Client, GatewayIntentBits, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import mongoose from 'mongoose';
+import express from 'express';
 import { User } from './models/User.js';
 import { RINGS_SHOP } from './constants.js';
 
+// ============================================
+// 1. KHỞI TẠO DISCORD CLIENT TRƯỚC TIÊN
+// ============================================
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent, // QUAN TRỌNG: Phải bật trong Discord Portal
+  ]
+});
 
-// Đăng nhập bot
+const PREFIX = ''; // Để trống = không cần prefix
 
-
-
-// Kết nối MongoDB
+// ============================================
+// 2. KẾT NỐI MONGODB
+// ============================================
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('✅ Đã kết nối MongoDB thành công'))
   .catch(err => {
@@ -18,8 +29,9 @@ mongoose.connect(process.env.MONGODB_URI)
     process.exit(1);
   });
 
-// Tạo HTTP server đơn giản cho Render (để bot không bị down)
-import express from 'express';
+// ============================================
+// 3. TẠO HTTP SERVER CHO RENDER
+// ============================================
 const httpApp = express();
 const PORT = process.env.PORT || 3000;
 
@@ -31,7 +43,9 @@ httpApp.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
     bot: client.user ? client.user.tag : 'Not ready',
-    uptime: process.uptime()
+    botReady: client.isReady(),
+    uptime: process.uptime(),
+    readyAt: client.readyAt ? client.readyAt.toISOString() : null
   });
 });
 
@@ -39,31 +53,40 @@ httpApp.listen(PORT, () => {
   console.log(`🌐 HTTP server listening on port ${PORT}`);
 });
 
-// Khởi tạo Discord Client
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent, // QUAN TRỌNG: Phải bật trong Discord Portal
-  ]
-});
+// ============================================
+// 4. ĐĂNG NHẬP DISCORD BOT
+// ============================================
 console.log("⏳ Đang tiến hành đăng nhập vào Discord...");
+console.log(`📌 BOT_TOKEN exists: ${process.env.BOT_TOKEN ? 'Yes' : 'No'}`);
+console.log(`📌 BOT_TOKEN length: ${process.env.BOT_TOKEN ? process.env.BOT_TOKEN.length : 0}`);
 
-client.login(process.env.BOT_TOKEN).catch(err => {
-  console.error("❌ Lỗi login Bot:");
-  console.error(err); // In chi tiết lỗi ra log
-});
+if (!process.env.BOT_TOKEN) {
+  console.error('❌ BOT_TOKEN not found in environment variables!');
+  process.exit(1);
+}
 
-// Prefix (có thể để trống nếu muốn không cần prefix)
-const PREFIX = ''; // Để trống = không cần prefix
+client.login(process.env.BOT_TOKEN)
+  .then(() => {
+    console.log("✅ Login request sent successfully, waiting for ready event...");
+  })
+  .catch(err => {
+    console.error("❌ Lỗi login Bot:");
+    console.error(err);
+    process.exit(1);
+  });
 
+// ============================================
+// 5. DISCORD EVENT: READY
+// ============================================
 client.once('ready', () => {
   console.log(`🤖 Bot đã đăng nhập: ${client.user.tag}`);
   console.log(`📝 Prefix: "${PREFIX}" (để trống = không cần prefix)`);
   console.log(`✅ Bot đã sẵn sàng!`);
 });
 
-// === XỬ LÝ TIN NHẮN ===
+// ============================================
+// 6. XỬ LÝ TIN NHẮN
+// ============================================
 client.on('messageCreate', async (message) => {
   try {
     // Bỏ qua tin nhắn từ bot
@@ -90,14 +113,7 @@ client.on('messageCreate', async (message) => {
 
     // === 1. TEST COMMAND ===
     if (command === 'test') {
-      console.log("-> Đang thử phản hồi lệnh test...");
-      
-      return message.reply('✅ Bot đang hoạt động bình thường!')
-        .then(() => console.log("-> Đã gửi phản hồi thành công!"))
-        .catch(err => {
-          console.error("❌ Lỗi khi gửi tin nhắn phản hồi:");
-          console.error(err); // Đây là dòng sẽ "khai" ra bot thiếu quyền gì
-        });
+      return message.reply('✅ Bot đang hoạt động bình thường!');
     }
 
     // === 2. PROFILE COMMAND ===
@@ -174,7 +190,6 @@ client.on('messageCreate', async (message) => {
 
     // === 6. OCHECK COMMAND ===
     if (command === 'ocheck') {
-      // RELOAD user từ database để lấy dữ liệu mới nhất (bao gồm couplePhoto)
       const freshUser = await User.findOne({ discordId: userId });
       
       if (!freshUser || !freshUser.partnerId || !freshUser.marriedAt) {
@@ -185,10 +200,6 @@ client.on('messageCreate', async (message) => {
       const now = new Date();
       const diffDays = Math.floor((now - startDate) / (1000 * 60 * 60 * 24));
 
-      // DEBUG: Kiểm tra xem có ảnh không
-      console.log(`[OCHECK] User ${userId} - couplePhoto: ${freshUser.couplePhoto || 'KHÔNG CÓ'}`);
-
-      // Tạo embed với ảnh cặp đôi (nếu có)
       const embed = {
         title: '💖 THÔNG TIN CẶP ĐÔI 💖',
         description: 
@@ -197,22 +208,16 @@ client.on('messageCreate', async (message) => {
           `💞 **Đã bên nhau:** ${diffDays} ngày\n` +
           `✨ **Điểm tình yêu tích lũy:** ${freshUser.lovePoints.toLocaleString()}\n\n` +
           `*Dùng \`olove\` mỗi giờ để tăng thêm điểm tình yêu nhé!*`,
-        color: 0xFF1493, // Deep Pink
+        color: 0xFF1493,
         timestamp: new Date()
       };
 
-      // Thêm ảnh cặp đôi nếu có
       if (freshUser.couplePhoto) {
-        console.log(`[OCHECK] Đang thêm ảnh vào embed: ${freshUser.couplePhoto}`);
         embed.image = { url: freshUser.couplePhoto };
       } else {
-        console.log(`[OCHECK] Không có ảnh, hiển thị footer`);
-        embed.footer = { 
-          text: '💡 Thêm ảnh cặp đôi bằng lệnh: oaddpic' 
-        };
+        embed.footer = { text: '💡 Thêm ảnh cặp đôi bằng lệnh: oaddpic' };
       }
 
-      console.log(`[OCHECK] Đang gửi embed với ${freshUser.couplePhoto ? 'CÓ' : 'KHÔNG CÓ'} ảnh`);
       return message.reply({ embeds: [embed] });
     }
 
@@ -242,12 +247,6 @@ client.on('messageCreate', async (message) => {
 
     // === 8. OADDCASH COMMAND ===
     if (command === 'oaddcash') {
-      // Uncomment nếu muốn giới hạn admin
-      // const ADMIN_ID = 'YOUR_DISCORD_ID';
-      // if (userId !== ADMIN_ID) {
-      //   return message.reply('❌ Bạn không có quyền dùng lệnh này!');
-      // }
-
       const amount = parseInt(args[1]);
       if (!amount || amount <= 0) {
         return message.reply('❌ Cách dùng: `oaddcash <số tiền> [@user]`\nVí dụ: `oaddcash 1000000 @user`');
@@ -259,22 +258,20 @@ client.on('messageCreate', async (message) => {
       const updatedUser = await User.findOneAndUpdate(
         { discordId: targetId },
         { $inc: { money: amount } },
-        { upsert: true, new: true }
+        { upsert: true, new: true, returnDocument: 'after' }
       );
 
       return message.reply(`✅ Đã nạp **${amount.toLocaleString()}$** cho <@${targetId}>.\n💰 Số dư mới: **${updatedUser.money.toLocaleString()}$**`);
     }
 
-    // === 8.5. OADDPIC COMMAND - THÊM ẢNH CẶP ĐÔI ===
+    // === 9. OADDPIC COMMAND ===
     if (command === 'oaddpic') {
       if (!user.partnerId) {
         return message.reply('❌ Bạn cần phải kết hôn trước khi thêm ảnh cặp đôi!');
       }
 
-      // Kiểm tra có đính kèm ảnh không
       const attachment = message.attachments.first();
       
-      // Nếu không có ảnh đính kèm, kiểm tra có URL trong tin nhắn không
       if (!attachment) {
         const urlMatch = args[1];
         if (!urlMatch || (!urlMatch.startsWith('http://') && !urlMatch.startsWith('https://'))) {
@@ -286,15 +283,9 @@ client.on('messageCreate', async (message) => {
           );
         }
 
-        // Dùng URL từ tin nhắn
         user.couplePhoto = urlMatch;
         await user.save();
-
-        // Cập nhật cho partner
-        await User.updateOne(
-          { discordId: user.partnerId },
-          { $set: { couplePhoto: urlMatch } }
-        );
+        await User.updateOne({ discordId: user.partnerId }, { $set: { couplePhoto: urlMatch } });
 
         return message.reply({
           content: `✅ Đã lưu ảnh cặp đôi của bạn và <@${user.partnerId}>!\n🖼️ Xem ảnh bằng lệnh \`ocheck\``,
@@ -306,24 +297,14 @@ client.on('messageCreate', async (message) => {
         });
       }
 
-      // Nếu có đính kèm ảnh
       if (attachment.contentType && !attachment.contentType.startsWith('image/')) {
         return message.reply('❌ File đính kèm phải là ảnh (jpg, png, gif, webp)!');
       }
 
       const photoUrl = attachment.url;
-      
-      // Lưu URL ảnh vào database
       user.couplePhoto = photoUrl;
       await user.save();
-
-      // Cập nhật cho partner
-      await User.updateOne(
-        { discordId: user.partnerId },
-        { $set: { couplePhoto: photoUrl } }
-      );
-
-      console.log(`[OADDPIC] ${userId} đã thêm ảnh cặp đôi: ${photoUrl}`);
+      await User.updateOne({ discordId: user.partnerId }, { $set: { couplePhoto: photoUrl } });
 
       return message.reply({
         content: `✅ Đã lưu ảnh cặp đôi của bạn và <@${user.partnerId}>!\n🖼️ Xem ảnh bằng lệnh \`ocheck\``,
@@ -335,7 +316,7 @@ client.on('messageCreate', async (message) => {
       });
     }
 
-    // === 9. MARRY COMMAND ===
+    // === 10. MARRY COMMAND ===
     if (command === 'marry') {
       const mentionedUser = message.mentions.users.first();
       if (!mentionedUser) {
@@ -364,7 +345,6 @@ client.on('messageCreate', async (message) => {
         return message.reply('❌ Bạn chưa có nhẫn! Hãy vào `shop` để mua nhẫn trước khi cầu hôn.');
       }
 
-      // Nếu chỉ có 1 nhẫn
       if (userRings.length === 1) {
         const ringName = userRings[0];
         const row = new ActionRowBuilder()
@@ -385,7 +365,6 @@ client.on('messageCreate', async (message) => {
         });
       }
 
-      // Nếu có nhiều nhẫn
       const selectMenu = new StringSelectMenuBuilder()
         .setCustomId('marry_select_ring')
         .setPlaceholder('Chọn nhẫn...')
@@ -405,7 +384,7 @@ client.on('messageCreate', async (message) => {
       });
     }
 
-    // === 10. HELP COMMAND ===
+    // === 11. HELP COMMAND ===
     if (command === 'help' || command === 'h') {
       return message.reply(
         `📋 **DANH SÁCH LỆNH**\n\n` +
@@ -429,7 +408,9 @@ client.on('messageCreate', async (message) => {
   }
 });
 
-// === XỬ LÝ BUTTON VÀ SELECT MENU ===
+// ============================================
+// 7. XỬ LÝ BUTTON VÀ SELECT MENU
+// ============================================
 client.on('interactionCreate', async (interaction) => {
   try {
     if (!interaction.isButton() && !interaction.isStringSelectMenu()) return;
@@ -437,7 +418,7 @@ client.on('interactionCreate', async (interaction) => {
     const userId = interaction.user.id;
     console.log(`[INTERACTION] ${interaction.customId} by ${userId}`);
 
-    // === XỬ LÝ MUA NHẪN ===
+    // === MUA NHẪN ===
     if (interaction.customId === 'shop_select') {
       const ring = RINGS_SHOP.find(r => r.id === interaction.values[0]);
       let user = await User.findOne({ discordId: userId });
@@ -574,4 +555,3 @@ client.on('interactionCreate', async (interaction) => {
     }
   }
 });
-
